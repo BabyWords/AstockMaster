@@ -1,0 +1,21 @@
+# ===== 数据文件（本地私有，不上传 GitHub）=====
+# 数据缓存（几百 MB ~ GB 级，且为个人私有行情数据）
+data/
+outputs/
+选股结果/
+
+# 任何 CSV / 数据缓存兜底（本项目所有 CSV 均为数据产物，不入库）
+*.csv
+*.parquet
+*.feather
+
+# ===== macOS =====
+._*
+.DS_Store
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
