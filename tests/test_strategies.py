@@ -10,18 +10,21 @@ import numpy as np
 import pandas as pd
 
 import backtest_engine as be
-import strategies  # noqa: F401  触发策略注册
+import quant.strategies  # noqa: F401  触发策略注册
 from sample_data import make_panel
 
 
 def _make_day():
-    """构造一个含全部 z_ 因子的单日横截面。"""
-    raw = make_panel(n_stocks=5, n_days=30)
+    """构造一个含全部 z_ 因子的单日横截面。
+
+    用 70 天、取第 66 天，确保 MA60（需 60 天历史）等长期因子也有值。
+    """
+    raw = make_panel(n_stocks=5, n_days=70)
     cfg = dict(be.DEFAULT_CONFIG)
     df = be.preprocess(raw, cfg)
     df = be.compute_factors(df)
     df = be.standardize(df)
-    d = df["交易日期"].iloc[25]
+    d = df["交易日期"].iloc[65]
     return df[df["交易日期"] == d]
 
 
@@ -54,46 +57,51 @@ class TestStrategyContract(unittest.TestCase):
 
 
 class TestParseArgs(unittest.TestCase):
+    """CLI 参数解析已从 engine 移到 scripts/run_backtest.py（引擎不碰命令行）。"""
+
+    def setUp(self):
+        from scripts.run_backtest import parse_args
+        self.parse_args = parse_args
 
     def test_no_args(self):
-        name, ov = be._parse_args([])
+        name, ov = self.parse_args([])
         self.assertIsNone(name)
         self.assertEqual(ov, {})
 
     def test_strategy_name(self):
-        name, ov = be._parse_args(["小市值反转"])
+        name, ov = self.parse_args(["小市值反转"])
         self.assertEqual(name, "小市值反转")
 
     def test_top_n(self):
-        _, ov = be._parse_args(["小市值反转", "-n", "7"])
+        _, ov = self.parse_args(["小市值反转", "-n", "7"])
         self.assertEqual(ov["top_n"], 7)
 
     def test_hold_days(self):
-        _, ov = be._parse_args(["小市值反转", "-hold", "15"])
+        _, ov = self.parse_args(["小市值反转", "-hold", "15"])
         self.assertEqual(ov["hold_days"], 15)
 
     def test_min_price_and_cost(self):
-        _, ov = be._parse_args(["x", "-price", "3", "-cost", "0.005"])
+        _, ov = self.parse_args(["x", "-price", "3", "-cost", "0.005"])
         self.assertEqual(ov["min_price"], 3.0)
         self.assertEqual(ov["cost"], 0.005)
 
     def test_start_separate_form(self):
-        _, ov = be._parse_args(["小市值反转", "--start", "20260101"])
+        _, ov = self.parse_args(["小市值反转", "--start", "20260101"])
         self.assertEqual(ov["start"], "20260101")
 
     def test_start_equals_form(self):
         """--start=YYYYMMDD 形式（曾因吞掉后续参数而有 bug）。"""
-        _, ov = be._parse_args(["小市值反转", "--start=20260101"])
+        _, ov = self.parse_args(["小市值反转", "--start=20260101"])
         self.assertEqual(ov["start"], "20260101")
 
     def test_start_equals_form_does_not_swallow_next_arg(self):
-        name, ov = be._parse_args(["小市值反转", "--start=20260101", "-n", "3"])
+        name, ov = self.parse_args(["小市值反转", "--start=20260101", "-n", "3"])
         self.assertEqual(ov["start"], "20260101")
         self.assertEqual(ov["top_n"], 3)
 
     def test_start_without_value(self):
         """--start 位于末尾无值时不应抛异常。"""
-        name, ov = be._parse_args(["小市值反转", "--start"])
+        name, ov = self.parse_args(["小市值反转", "--start"])
         self.assertEqual(name, "小市值反转")
         self.assertNotIn("start", ov)
 

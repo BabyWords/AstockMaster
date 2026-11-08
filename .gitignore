@@ -1,15 +1,25 @@
 # ===== 数据文件（本地私有，不上传 GitHub）=====
+# 注意：gitignore 不支持行尾注释，注释必须单独成行，否则整条规则失效。
+
 # 数据缓存（几百 MB ~ GB 级，且为个人私有行情数据）
 data/
-outputs/
 选股结果/
+
+# 网页分片 + 分时缓存 + 回测任务临时文件（1.8G）
+webapp/data_store/
+
+# 历史实验产物（CSV / 快照，194M）
+legacy/_archive/
 
 # 任何 CSV / 数据缓存兜底（本项目所有 CSV 均为数据产物，不入库）
 *.csv
+*.pkl
 *.parquet
 *.feather
+*.spec.json
+*.out.json
 
-# ===== macOS =====
+# ===== macOS / ExFAT =====
 ._*
 .DS_Store
 
@@ -19,3 +29,4 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/

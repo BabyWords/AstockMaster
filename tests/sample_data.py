@@ -8,9 +8,10 @@
 import pandas as pd
 import numpy as np
 
-# 与 backtest_engine.py 中 _load_raw 读取的字段保持一致
-FIELDS = ["股票代码", "股票名称", "交易日期", "收盘价（元）", "复权因子",
-          "流通市值（万元）", "换手率（%）", "市盈率（TTM）", "市净率",
+# 与 backtest_engine.py 中 _load_raw 读取的字段保持一致（含量价字段）
+FIELDS = ["股票代码", "股票名称", "交易日期", "开盘价（元）", "最高价（元）", "最低价（元）",
+          "收盘价（元）", "昨收价（元）", "涨跌幅（%）", "成交量（手）", "成交额（万元）",
+          "复权因子", "流通市值（万元）", "换手率（%）", "市盈率（TTM）", "市净率",
           "股息率（TTM）（%）", "量比"]
 
 
@@ -19,6 +20,7 @@ def make_panel(n_stocks=5, n_days=40, start="2021-01-01", seed=42):
 
     价格用确定性随机游走（seed 固定），复权因子恒为 1（前复权不改变价格），
     流通市值按股票序号递增（用于验证 SIZE = -log(市值)）。
+    开/高/低/昨收/成交量/成交额随收盘价同步生成，覆盖量价因子。
     """
     codes = ["600000", "000001", "300750", "600519", "002594"][:n_stocks]
     names = ["浦发银行", "平安银行", "宁德时代", "贵州茅台", "比亚迪"][:n_stocks]
@@ -28,14 +30,28 @@ def make_panel(n_stocks=5, n_days=40, start="2021-01-01", seed=42):
     rows = []
     for ci, code in enumerate(codes):
         price = 10.0 + ci * 5.0                     # 每只不同起点
+        prev_close = price
         mktcap = float((ci + 1) * 10000)            # 万元，市值随 ci 递增
         for d in dates:
-            price = price * (1 + rng.normal(0, 0.02))
+            open_ = prev_close * (1 + rng.normal(0, 0.01))
+            price = prev_close * (1 + rng.normal(0, 0.02))
+            high = max(open_, price) * (1 + rng.uniform(0, 0.01))
+            low = min(open_, price) * (1 - rng.uniform(0, 0.01))
+            pct = (price / prev_close - 1) * 100
+            vol_hand = rng.uniform(1000, 50000)     # 手
+            amt = vol_hand * price / 10000          # 粗略成交额（万元）
             rows.append({
                 "股票代码": code,
                 "股票名称": names[ci],
                 "交易日期": d,
+                "开盘价（元）": round(float(open_), 4),
+                "最高价（元）": round(float(high), 4),
+                "最低价（元）": round(float(low), 4),
                 "收盘价（元）": round(float(price), 4),
+                "昨收价（元）": round(float(prev_close), 4),
+                "涨跌幅（%）": round(float(pct), 4),
+                "成交量（手）": round(float(vol_hand), 4),
+                "成交额（万元）": round(float(amt), 4),
                 "复权因子": 1.0,
                 "流通市值（万元）": mktcap,
                 "换手率（%）": round(float(rng.uniform(0.5, 15)), 4),
@@ -44,6 +60,7 @@ def make_panel(n_stocks=5, n_days=40, start="2021-01-01", seed=42):
                 "股息率（TTM）（%）": round(float(rng.uniform(0, 8)), 4),
                 "量比": round(float(rng.uniform(0.5, 3)), 4),
             })
+            prev_close = price
     return pd.DataFrame(rows)
 
 
@@ -60,7 +77,11 @@ def make_dirty_panel(n_days=10):
         for d in dates:
             rows.append({
                 "股票代码": code, "股票名称": name, "交易日期": d,
-                "收盘价（元）": price, "复权因子": factor,
+                "开盘价（元）": price, "最高价（元）": price * 1.02,
+                "最低价（元）": price * 0.98, "收盘价（元）": price,
+                "昨收价（元）": price, "涨跌幅（%）": 0.0,
+                "成交量（手）": 10000.0, "成交额（万元）": 1000.0,
+                "复权因子": factor,
                 "流通市值（万元）": mktcap,
                 "换手率（%）": 5.0, "市盈率（TTM）": 20.0, "市净率": 2.0,
                 "股息率（TTM）（%）": 1.0, "量比": 1.0,

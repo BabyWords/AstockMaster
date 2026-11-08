@@ -43,6 +43,33 @@ class TestComputeFactors(unittest.TestCase):
                   "TURN", "PB", "PE", "DIV"]:
             self.assertIn(c, self.df.columns)
 
+    def test_extended_factor_columns_exist(self):
+        for c in ["LB", "TURN_STD20", "MAXUP20", "MAXDN20", "NEWHIGH20", "MA_GAP"]:
+            self.assertIn(c, self.df.columns)
+
+    def test_price_volume_factor_columns_exist(self):
+        for c in ["AMT", "AMT20", "VOL_RATIO", "PCT", "GAP", "TAIL", "IS_YANG"]:
+            self.assertIn(c, self.df.columns)
+
+    def test_lb_equals_liangbi(self):
+        np.testing.assert_allclose(self.df["LB"], self.df["量比"],
+                                   rtol=1e-12, equal_nan=True)
+
+    def test_newhigh20_has_values_after_warmup(self):
+        """NEWHIGH20 = 收盘/前20日最高价(不含当天)-1，前10天NaN(需滚动历史)，之后有值。"""
+        for code, g in self.df.groupby("股票代码"):
+            nh = g["NEWHIGH20"]
+            self.assertTrue(nh.iloc[:10].isna().all(), f"{code} 前10天应NaN")
+            self.assertTrue(nh.iloc[15:].notna().all(), f"{code} 第15天后应有值")
+
+    def test_maxdn20_nonpositive(self):
+        """MAXDN20 = 20日最大单日跌幅，取 ret1 的 rolling min，应 <= 0。"""
+        self.assertTrue((self.df["MAXDN20"].dropna() <= 1e-9).all())
+
+    def test_vol_ratio_equals_amt_over_amt20(self):
+        expected = self.df["成交额（万元）"] / self.df["AMT20"]
+        np.testing.assert_allclose(self.df["VOL_RATIO"], expected, rtol=1e-9, equal_nan=True)
+
     def test_vol20_nonnegative(self):
         self.assertTrue((self.df["VOL20"].dropna() >= 0).all())
 

@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A股分析系统</title>
+  <script>
+    // 尽早应用主题，避免首屏闪白
+    try {
+      var _t = localStorage.getItem('theme');
+      document.documentElement.dataset.theme = (_t === 'light' || _t === 'dark') ? _t : 'dark';
+    } catch (e) { /* 隐私模式忽略 */ }
+  </script>
+  <script src="/static/echarts.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel-2: #1b222c;
+      --panel-3: #30363d;
+      --border: #262d38;
+      --border-strong: #3a4553;
+      --row-line: #1b222c;
+      --field-bg: #0d1117;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --dim: #6e7681;
+      --accent: #58a6ff;
+      --accent-soft: #9ecbff;
+      --accent-bg: rgba(88, 166, 255, .13);
+      --accent-border: #2f6fb3;
+      --accent-solid: #1f6feb;
+      --accent-ring: rgba(88, 166, 255, .15);
+      --up: #f6465d;    /* 涨=红 */
+      --down: #0ecb81;  /* 跌=绿 */
+      --mask: rgba(1, 4, 9, .72);
+      --shadow-lg: 0 14px 34px rgba(0, 0, 0, .55);
+      --shadow-box: 0 24px 70px rgba(0, 0, 0, .65);
+      --sb: #2b3441;
+      --sb-hover: #3a4553;
+      --sel: rgba(88, 166, 255, .30);
+      --warn-bg: #3a1d24;
+      --warn-fg: #ff7b72;
+    }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --panel-2: #f3f5f8;
+      --panel-3: #eef1f5;
+      --border: #e5e7eb;
+      --border-strong: #cbd5e1;
+      --row-line: #f1f2f4;
+      --field-bg: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --dim: #9ca3af;
+      --accent: #2563eb;
+      --accent-soft: #1d4ed8;
+      --accent-bg: rgba(37, 99, 235, .10);
+      --accent-border: #93c5fd;
+      --accent-solid: #2563eb;
+      --accent-ring: rgba(37, 99, 235, .15);
+      --up: #ef232a;
+      --down: #14b143;
+      --mask: rgba(15, 23, 42, .45);
+      --shadow-lg: 0 14px 34px rgba(0, 0, 0, .12);
+      --shadow-box: 0 24px 70px rgba(0, 0, 0, .30);
+      --sb: #d5dae1;
+      --sb-hover: #c0c7d0;
+      --sel: rgba(37, 99, 235, .18);
+      --warn-bg: #fecaca;
+      --warn-fg: #b91c1c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Microsoft YaHei", sans-serif;
+      color: var(--text); height: 100vh;
+      display: flex; flex-direction: column; overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color .18s, color .18s;
+    }
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--sb); border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--sb-hover); }
+    ::selection { background: var(--sel); }
+
+    header {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+      flex-wrap: wrap; z-index: 20;
+    }
+    header h1 { font-size: 18px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .search-box { position: relative; flex: 1; min-width: 260px; max-width: 420px; }
+    .search-box input {
+      width: 100%; height: 36px; padding: 0 12px; font-size: 14px;
+      background: var(--field-bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; outline: none;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    .search-box input::placeholder { color: var(--dim); }
+    .search-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+    #search-results {
+      position: absolute; top: 42px; left: 0; right: 0; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 8px; max-height: 320px;
+      overflow-y: auto; box-shadow: var(--shadow-lg); display: none;
+    }
+    #search-results.show { display: block; }
+    .search-item {
+      padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between;
+      align-items: center; border-bottom: 1px solid var(--row-line);
+    }
+    .search-item:last-child { border-bottom: none; }
+    .search-item:hover { background: var(--panel-2); }
+    .search-item .code { font-weight: 600; color: var(--accent); }
+    .search-item .name { margin-left: 8px; color: var(--text); }
+    .search-item .close { color: var(--muted); font-size: 12px; }
+    #stock-info { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+    #stock-info .sname { font-size: 16px; font-weight: 700; color: var(--text); }
+    #stock-info .scode { color: var(--muted); font-size: 13px; }
+    #stock-info .rt {
+      display: inline-flex; align-items: baseline; gap: 7px;
+      margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    #stock-info .rt b { font-size: 15px; font-weight: 700; }
+    #stock-info .rt i { font-size: 12px; font-style: normal; font-weight: 600; }
+    #stock-info .rt em { font-size: 10.5px; font-style: normal; color: var(--dim); }
+    .period-tabs { display: flex; gap: 4px; }
+    .period-tabs button {
+      padding: 6px 16px; font-size: 13px; border: 1px solid var(--border);
+      background: var(--panel); color: var(--muted); border-radius: 8px; cursor: pointer;
+      transition: all .12s;
+    }
+    .period-tabs button:hover { color: var(--text); border-color: var(--border-strong); }
+    .period-tabs button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+    #theme-btn {
+      margin-left: auto; width: 34px; height: 32px; flex: 0 0 auto;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+      border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: all .12s;
+    }
+    #theme-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-3); }
+    .ind-bar {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 6px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      z-index: 19;
+    }
+    .ind-bar .ind-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .chip {
+      padding: 4px 11px; font-size: 12px; border-radius: 14px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+      user-select: none; transition: all .12s;
+    }
+    .chip:hover { border-color: var(--accent-border); color: var(--accent-soft); }
+    .chip.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-soft); font-weight: 600; }
+    #trade-btn { margin-left: auto; flex: 0 0 auto; }
+    #chart { flex: 1; min-height: 0; background: var(--bg); }
+
+    /* 左侧自选栏 */
+    .workspace { flex: 1; min-height: 0; display: flex; }
+    #watch {
+      width: 208px; flex: 0 0 208px; background: var(--panel);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+      min-height: 0;
+    }
+    .watch-head {
+      display: flex; align-items: center; gap: 6px; padding: 9px 10px 9px 14px;
+      border-bottom: 1px solid var(--border); flex: 0 0 auto;
+    }
+    .watch-title { font-size: 13px; font-weight: 700; color: var(--text); }
+    .watch-tip { font-size: 10.5px; color: var(--dim); flex: 1; white-space: nowrap; }
+    #watch-add {
+      width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--accent); font-size: 14px; line-height: 1;
+      cursor: pointer; padding: 0; transition: all .12s;
+    }
+    #watch-add:hover { background: var(--accent-bg); border-color: var(--accent-border); }
+    #watch-list { flex: 1; overflow-y: auto; min-height: 0; }
+    .w-item {
+      display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+      border-bottom: 1px solid var(--row-line); cursor: pointer; position: relative;
+    }
+    .w-item:hover { background: var(--panel-2); }
+    .w-item.active { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+    .w-main { flex: 1; min-width: 0; }
+    .w-name {
+      font-size: 12.5px; font-weight: 600; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .w-item.active .w-name { color: var(--accent-soft); }
+    .w-sub { font-size: 10.5px; color: var(--dim); margin-top: 1px; }
+    .w-right { text-align: right; flex: 0 0 auto; }
+    .w-close { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+    .w-pct { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .w-del {
+      flex: 0 0 14px; width: 14px; height: 14px; align-self: center;
+      border: none; background: transparent; color: var(--dim); border-radius: 50%;
+      font-size: 12px; line-height: 1; cursor: pointer; padding: 0;
+      opacity: 0; transition: opacity .12s;
+    }
+    .w-item:hover .w-del { opacity: 1; }
+    .w-del:hover { background: var(--warn-bg); color: var(--warn-fg); }
+    .w-empty {
+      padding: 26px 14px; text-align: center; font-size: 11.5px;
+      color: var(--dim); line-height: 1.7;
+    }
+
+    /* 分时浮层 */
+    #minute-mask {
+      position: fixed; inset: 0; background: var(--mask);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    #minute-mask.show { display: flex; }
+    #minute-box {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      width: min(1120px, 93vw); height: min(660px, 88vh);
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: var(--shadow-box);
+    }
+    #minute-head {
+      display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    #minute-head .mt-title { font-size: 15px; font-weight: 700; color: var(--text); }
+    #minute-head .mt-tag { font-size: 12px; color: var(--muted); }
+    #minute-head .mt-nums { font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); }
+    #minute-head .mt-nums b { font-weight: 600; }
+    #minute-close {
+      margin-left: auto; border: 1px solid var(--border); background: var(--panel-2);
+      color: var(--muted); width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+      font-size: 16px; line-height: 1; transition: all .12s;
+    }
+    #minute-close:hover { background: var(--panel-3); color: var(--text); }
+    #minute-chart { flex: 1; min-height: 0; position: relative; }
+    #minute-tip {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 13px; pointer-events: none;
+    }
+
+    /* 提示框内的指标单元格 */
+    .tt-head { font-size: 12px; font-weight: 600; margin-bottom: 3px; color: var(--text); }
+    .tt-row { display: flex; flex-wrap: wrap; margin-top: 2px; line-height: 1.45; }
+    .tt-c { display: inline-block; min-width: 92px; padding-right: 6px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    .tt-c i { font-style: normal; color: var(--muted); margin-right: 3px; }
+    .tt-sep { height: 1px; background: var(--border); margin: 4px 0 0; }
+    .empty-tip {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; color: var(--muted); gap: 10px;
+      pointer-events: none;
+    }
+    .empty-tip .big { font-size: 20px; font-weight: 600; color: var(--text); }
+
+    /* ============================ 助手面板 ============================ */
+    #assistant-btn {
+      margin-left: auto; height: 32px; padding: 0 13px; flex: 0 0 auto;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+      border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px; transition: all .12s;
+    }
+    #assistant-btn:hover { color: var(--accent-soft); border-color: var(--accent-border); background: var(--accent-bg); }
+    #assistant-btn .ico { margin-right: 5px; }
+    #theme-btn { margin-left: 0; }
+
+    #as-mask {
+      position: fixed; inset: 0; background: var(--mask);
+      display: none; align-items: center; justify-content: center; z-index: 110;
+    }
+    #as-mask.show { display: flex; }
+    #as-box {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      width: min(1180px, 94vw); height: min(742px, 90vh);
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: var(--shadow-box);
+    }
+    #as-head {
+      display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap; flex: 0 0 auto;
+    }
+    #as-head .as-title { font-size: 15px; font-weight: 700; color: var(--text); }
+    #as-head .as-sub { font-size: 11.5px; color: var(--dim); }
+    .as-tabs { display: flex; gap: 4px; }
+    .as-tabs button {
+      padding: 6px 16px; font-size: 13px; border: 1px solid var(--border);
+      background: var(--panel); color: var(--muted); border-radius: 8px; cursor: pointer;
+      transition: all .12s;
+    }
+    .as-tabs button:hover { color: var(--text); border-color: var(--border-strong); }
+    .as-tabs button.active { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+    #as-close {
+      margin-left: auto; border: 1px solid var(--border); background: var(--panel-2);
+      color: var(--muted); width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+      font-size: 16px; line-height: 1; transition: all .12s;
+    }
+    #as-close:hover { background: var(--panel-3); color: var(--text); }
+
+    .as-pane { flex: 1; min-height: 0; display: none; flex-direction: column; }
+    .as-pane.active { display: flex; }
+    .as-form {
+      display: flex; gap: 10px; padding: 11px 16px; align-items: flex-end;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap; flex: 0 0 auto;
+    }
+    .as-field { display: flex; flex-direction: column; gap: 4px; }
+    .as-field label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .as-field input, .as-field select {
+      height: 30px; padding: 0 8px; font-size: 12.5px; border-radius: 7px;
+      background: var(--field-bg); color: var(--text); border: 1px solid var(--border);
+      outline: none; transition: border-color .12s, box-shadow .12s;
+    }
+    .as-field input:focus, .as-field select:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .as-field select { min-width: 132px; }
+    .as-field.narrow input { width: 74px; }
+    .as-field.date input { width: 108px; }
+    .as-btn {
+      height: 30px; padding: 0 18px; border-radius: 7px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--accent-solid); background: var(--accent-solid); color: #fff;
+      cursor: pointer; transition: all .12s; white-space: nowrap;
+    }
+    .as-btn:hover:not(:disabled) { filter: brightness(1.1); }
+    .as-btn:disabled { opacity: .55; cursor: default; }
+    .as-btn.ghost {
+      background: var(--panel-2); color: var(--muted); border-color: var(--border);
+    }
+    .as-status { font-size: 11.5px; color: var(--muted); padding: 0 0 6px; min-height: 16px; }
+
+    /* ---------- 公式策略 / 串联操作 ---------- */
+    .as-form-sm { padding-top: 0; gap: 8px; }
+    .as-form-sm .as-field input { height: 28px; font-size: 12px; }
+    .as-form-sm #as-f-expr { font-family: ui-monospace, Menlo, monospace; }
+    .as-form-sm .as-btn { height: 28px; padding: 0 12px; font-size: 12px; }
+
+    /* ---------- 因子表 ---------- */
+    .as-factors {
+      display: none; border-bottom: 1px solid var(--border);
+      background: var(--panel-2); max-height: 352px; overflow-y: auto; overflow-x: hidden;
+      padding: 0 16px 10px;
+    }
+    .as-factors.show { display: block; }
+    /* 顶部工具条吸顶，滚动时搜索框和切换始终可用 */
+    .fx-head {
+      position: sticky; top: 0; z-index: 3; display: flex; align-items: center;
+      gap: 10px; padding: 9px 0 7px; background: var(--panel-2);
+      border-bottom: 1px solid var(--border); margin-bottom: 8px;
+    }
+    .fx-title { font-size: 12.5px; font-weight: 700; color: var(--text); }
+    .fx-title em { font-style: normal; color: var(--accent); }
+    .fx-hint { font-size: 11px; color: var(--dim); }
+    .fx-search {
+      margin-left: auto; height: 26px; width: 148px; padding: 0 9px; font-size: 11.5px;
+      border-radius: 7px; border: 1px solid var(--border); background: var(--field-bg);
+      color: var(--text); outline: none;
+    }
+    .fx-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+    .fx-mode { display: flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+    .fx-mode button {
+      border: 0; background: var(--panel); color: var(--dim); font-size: 11px;
+      padding: 4px 9px; cursor: pointer; transition: all .12s; font-family: ui-monospace, Menlo, monospace;
+    }
+    .fx-mode button + button { border-left: 1px solid var(--border); }
+    .fx-mode button:hover { color: var(--text); }
+    .fx-mode button.on { background: var(--accent-bg); color: var(--accent-soft); font-weight: 700; }
+
+    .fx-group { display: flex; gap: 10px; align-items: flex-start; padding: 3px 0; }
+    .fx-cat {
+      flex: 0 0 66px; font-size: 10.5px; color: var(--dim); padding-top: 5px;
+      text-align: right; letter-spacing: .5px; white-space: nowrap;
+    }
+    .fx-list { display: flex; flex-wrap: wrap; gap: 5px; flex: 1 1 auto; min-width: 0; }
+    .fxchip {
+      display: inline-flex; align-items: baseline; gap: 5px; cursor: pointer;
+      font-size: 11.5px; line-height: 1.5; padding: 2px 8px; border-radius: 6px;
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      transition: all .1s; user-select: none;
+    }
+    .fxchip:hover {
+      border-color: var(--accent-border); background: var(--accent-bg);
+      color: var(--accent-soft); transform: translateY(-1px);
+    }
+    .fxchip code { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+    .fxchip .d { font-size: 10.5px; color: var(--dim); }
+    .fxchip:hover .d { color: var(--accent-soft); opacity: .75; }
+    .fxchip.used { border-color: var(--accent-border); background: var(--accent-bg); }
+    .fxchip.used code { color: var(--accent-soft); }
+    .fx-empty { font-size: 11.5px; color: var(--dim); padding: 8px 0 4px 76px; }
+
+    .fx-ex { margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border); }
+    .fx-ex .fx-cat { padding-top: 4px; }
+    .fxex {
+      display: inline-flex; align-items: baseline; gap: 6px; cursor: pointer;
+      font-size: 11px; padding: 3px 9px; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+      transition: all .12s;
+    }
+    .fxex:hover { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-soft); }
+    .fxex b { color: var(--text); font-weight: 600; }
+    .fxex:hover b { color: var(--accent-soft); }
+    .fxex code { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; opacity: .8; }
+    .as-actions {
+      display: none; gap: 8px; align-items: center; flex-wrap: wrap;
+      padding: 10px 16px; border-top: 1px solid var(--border); background: var(--panel-2);
+      position: sticky; bottom: 0;
+    }
+    .as-actions.show { display: flex; }
+    .as-pickinfo { font-size: 11.5px; color: var(--muted); flex: 1 1 auto; }
+
+    .as-scroll { flex: 1; overflow: auto; min-height: 0; }
+    .as-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .as-table th {
+      position: sticky; top: 0; z-index: 2; background: var(--panel-2);
+      color: var(--muted); font-weight: 600; text-align: right;
+      padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .as-table th:first-child, .as-table td:first-child { text-align: left; }
+    .as-table td {
+      padding: 6px 10px; border-bottom: 1px solid var(--row-line);
+      text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .as-table tbody tr:hover td { background: var(--panel-2); }
+    .as-table .c-code { color: var(--accent); font-weight: 600; }
+    .as-table .c-name { color: var(--text); }
+    .as-table .add-w {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--accent);
+      border-radius: 5px; font-size: 11px; padding: 1px 7px; cursor: pointer;
+    }
+    .as-table .add-w:hover { background: var(--accent-bg); border-color: var(--accent-border); }
+    .as-empty { padding: 40px 16px; text-align: center; color: var(--dim); font-size: 12.5px; line-height: 1.9; }
+
+    .as-metrics { display: flex; gap: 10px; padding: 12px 16px 4px; flex-wrap: wrap; }
+    .as-metric {
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 9px 14px; min-width: 108px;
+    }
+    .as-metric .k { font-size: 11px; color: var(--muted); }
+    .as-metric .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .as-note { padding: 2px 16px 10px; font-size: 11.5px; color: var(--dim); }
+    #as-nav { height: 236px; margin: 0 16px; }
+    /* 模拟盘 */
+    #pm-nav { height: 208px; margin: 0 16px; overflow: hidden; }
+    #pm-list { min-width: 210px; max-width: 260px; }
+    #pm-codes { min-width: 150px; }
+    /* 持仓/逐日表列多，单独横向滚动，别把整个面板撑宽（会把净值图挤变形） */
+    #pm-pos, #pm-daily { overflow-x: auto; }
+    #pm-pos table, #pm-daily table { min-width: 540px; }
+    #pm-daily table { min-width: 0; }          /* 只有 4 列，别跟着横向滚 */
+    #pm-pos th, #pm-pos td, #pm-daily th, #pm-daily td { white-space: nowrap; }
+    .pm-tag {
+      display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 4px;
+      background: var(--accent-bg); color: var(--accent-soft);
+      border: 1px solid var(--accent-border); margin-left: 6px; vertical-align: 1px;
+    }
+    .pm-tag.done { background: var(--panel-3); color: var(--muted); border-color: var(--border-strong); }
+    .as-year { margin: 8px 16px 16px; }
+    .as-year table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .as-year th {
+      background: var(--panel-2); color: var(--muted); font-weight: 600;
+      padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border);
+    }
+    .as-year th:first-child, .as-year td:first-child { text-align: left; }
+    .as-year td {
+      padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--row-line);
+      font-variant-numeric: tabular-nums;
+    }
+    .as-metric .v.pos, .as-year td.pos { color: var(--up); }
+    .as-metric .v.neg, .as-year td.neg { color: var(--down); }
+
+    /* ============================ 移动端控件（桌面隐藏） ============================ */
+    #watch-toggle { display: none; }
+    #watch-mask { display: none; }
+
+    /* ============================ 移动端适配 ============================ */
+    @media (max-width: 820px) {
+      body { height: 100vh; height: 100dvh; -webkit-tap-highlight-color: transparent; }
+      /* 输入框 ≥16px，避免 iOS 聚焦时自动放大页面 */
+      .search-box input, .as-field input, .as-field select { font-size: 16px; }
+
+      /* ---------- 顶栏：两行，图标化按钮 ---------- */
+      header { padding: 7px 10px; gap: 7px; }
+      header h1 { display: none; }
+      #watch-toggle {
+        display: inline-flex; order: 1; flex: 0 0 auto;
+        width: 34px; height: 32px; align-items: center; justify-content: center;
+        border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+        border-radius: 8px; font-size: 15px; line-height: 1; cursor: pointer;
+      }
+      #watch-toggle:active { background: var(--accent-bg); border-color: var(--accent-border); }
+      #stock-info { order: 2; flex: 1 1 auto; min-width: 0; gap: 6px; overflow: hidden; }
+      #stock-info .sname { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #stock-info .scode { font-size: 11px; flex: 0 0 auto; }
+      #stock-info .rt { gap: 4px; margin-left: 0; padding-left: 7px; border-left: 0; }
+      #stock-info .rt b { font-size: 13.5px; }
+      #stock-info .rt i { font-size: 11px; }
+      #stock-info .rt em { display: none; }
+      .period-tabs { order: 3; gap: 3px; flex: 0 0 auto; }
+      /* 手机上按钮只留一个字（日/周/月），给实时价腾地方 */
+      .period-tabs button { padding: 6px 7px; font-size: 0; border-radius: 7px; }
+      .period-tabs button::after { font-size: 11.5px; }
+      .period-tabs button[data-period="day"]::after { content: "日"; }
+      .period-tabs button[data-period="week"]::after { content: "周"; }
+      .period-tabs button[data-period="month"]::after { content: "月"; }
+      /* 助手挪到第二行，跟搜索框并排 */
+      #assistant-btn { order: 11; padding: 0 9px; height: 34px; font-size: 12px; flex: 0 0 auto; }
+      #assistant-btn .ico { display: none; }
+      #theme-btn { order: 5; width: 30px; height: 30px; font-size: 14px; }
+      .search-box { order: 10; flex: 1 1 auto; min-width: 0; max-width: none; }
+      .search-box input { height: 36px; }
+      #search-results { top: 40px; max-height: 44vh; }
+      .search-item { padding: 11px 12px; }
+
+      /* ---------- 指标条：单行横向滚动 ---------- */
+      .ind-bar {
+        padding: 6px 10px; flex-wrap: nowrap; overflow-x: auto;
+        -webkit-overflow-scrolling: touch; scrollbar-width: none;
+      }
+      .ind-bar::-webkit-scrollbar { display: none; }
+      .ind-bar .ind-label { display: none; }
+      #ind-chips { display: flex; gap: 6px; flex-wrap: nowrap; }
+      .chip { flex: 0 0 auto; padding: 5px 12px; font-size: 12px; white-space: nowrap; }
+
+      /* ---------- 自选：抽屉 ---------- */
+      #watch {
+        position: fixed; top: 0; bottom: 0; left: 0; z-index: 130;
+        width: 78vw; max-width: 300px;
+        border-right: 1px solid var(--border-strong);
+        box-shadow: var(--shadow-box);
+        transform: translateX(-101%); transition: transform .24s cubic-bezier(.4, 0, .2, 1);
+        padding-top: env(safe-area-inset-top, 0);
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        will-change: transform;
+      }
+      #watch.open { transform: translateX(0); }
+      #watch-mask {
+        display: block; position: fixed; inset: 0; z-index: 129; background: var(--mask);
+        opacity: 0; pointer-events: none; transition: opacity .24s;
+      }
+      #watch-mask.open { opacity: 1; pointer-events: auto; }
+      .watch-head { padding: 11px 12px; }
+      .watch-title { font-size: 14px; }
+      .w-item { padding: 11px 12px; }
+      .w-name { font-size: 13.5px; }
+      .w-sub { font-size: 10.5px; }
+      .w-close { font-size: 13px; }
+      .w-pct { font-size: 12px; }
+      .w-del { opacity: .55; font-size: 15px; width: 22px; height: 22px; flex: 0 0 22px; }
+
+      /* ---------- 分时浮层：全屏 ---------- */
+      #minute-box { width: 100vw; height: 100dvh; border-radius: 0; border: none; }
+      #minute-head { padding: 9px 12px; gap: 8px; }
+      #minute-head .mt-title { font-size: 14px; }
+      #minute-head .mt-nums { font-size: 11px; gap: 9px; }
+      #minute-close { width: 32px; height: 32px; }
+
+      /* ---------- 助手：全屏 + 表单两列 ---------- */
+      #as-mask { align-items: stretch; }
+      #as-box { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; border: none; }
+      #as-head { padding: 8px 12px; gap: 8px; }
+      #as-head .as-sub { display: none; }
+      #as-close { width: 32px; height: 32px; }
+      .as-tabs button { padding: 6px 13px; font-size: 12.5px; }
+      .as-form {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 9px;
+        padding: 11px 12px; align-items: end;
+      }
+      .as-field { min-width: 0; }
+      .as-field label { font-size: 11px; }
+      .as-field input, .as-field select { height: 36px; width: 100%; min-width: 0; }
+      .as-field.narrow input, .as-field.date input { width: 100%; height: 36px; }
+      #pm-list, #pm-codes { min-width: 0; max-width: none; width: 100%; }
+      .as-form .as-btn { grid-column: 1 / -1; width: 100%; height: 38px; font-size: 14px; }
+      /* 公式策略行：名字一行、公式占满第二行、两个按钮并排第三行 */
+      .as-form-sm .as-field:nth-child(2) { grid-column: 1 / -1; }
+      .as-form-sm .as-btn {
+        grid-column: auto; height: 34px; font-size: 12.5px; width: auto;
+        min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      }
+      .as-status { padding: 0 12px 6px; }
+      .as-factors { padding: 0 12px 8px; max-height: 320px; }
+      .fx-head { gap: 6px; padding: 8px 0 6px; flex-wrap: wrap; }
+      .fx-hint { display: none; }
+      .fx-title { flex: 1 1 auto; }
+      .fx-search { margin-left: 0; flex: 1 1 90px; width: auto; height: 30px; }
+      .fx-mode { flex: 0 0 auto; }
+      .fx-mode button { padding: 5px 8px; }
+      /* 手机上分类单独占一行，把整行宽度让给因子标签 */
+      .fx-group { display: block; padding: 6px 0 2px; }
+      .fx-cat { display: block; flex: none; text-align: left; padding: 0 0 5px; font-size: 10px; }
+      .fx-list { gap: 4px; }
+      .fxchip { font-size: 11px; padding: 3px 7px; }
+      .fxchip .d { display: none; }          /* 手机上只留因子名，避免换行爆炸 */
+      .fx-empty { padding-left: 0; }
+      .fx-ex { margin-top: 6px; }
+      .fxex { font-size: 10.5px; padding: 3px 8px; }
+      .fxex code { font-size: 10px; }
+      .as-actions { padding: 9px 12px; }
+      .as-pickinfo { flex: 1 1 100%; font-size: 11px; }
+      .as-actions .as-btn { flex: 1 1 0; padding: 0 10px; font-size: 12.5px; }
+      .as-metrics { padding: 10px 12px 2px; gap: 8px; }
+      .as-metric { flex: 1 1 calc(50% - 4px); min-width: 0; padding: 8px 11px; }
+      .as-metric .v { font-size: 15px; }
+      .as-note { padding: 2px 12px 8px; }
+      #as-nav { height: 176px; margin: 0 6px; }
+      #pm-nav { height: 168px; margin: 0 6px; }
+      .as-year { margin: 6px 12px 14px; }
+
+      /* 选股表：手机上隐去 4 个次要列，避免横向拖 */
+      .as-table { font-size: 11.5px; }
+      .as-table th, .as-table td { padding: 7px 7px; }
+      #as-s-table th:nth-child(8), #as-s-table td:nth-child(8),
+      #as-s-table th:nth-child(9), #as-s-table td:nth-child(9),
+      #as-s-table th:nth-child(10), #as-s-table td:nth-child(10),
+      #as-s-table th:nth-child(11), #as-s-table td:nth-child(11) { display: none; }
+      .as-table .add-w { padding: 3px 8px; font-size: 11.5px; }
+      .as-table th:last-child, .as-table td:last-child { padding-right: 11px; }
+
+      /* tooltip 收窄 */
+      .tt-c { min-width: 0; padding-right: 9px; font-size: 11px; }
+      .empty-tip { padding: 0 24px; text-align: center; }
+      .empty-tip .big { font-size: 17px; }
+    }
+
+    /* 触屏设备：删除按钮常显，因为没有 hover */
+    @media (hover: none) {
+      .w-del { opacity: .55; }
+    }
+    @media (max-width: 400px) {
+      .w-del { opacity: .55; }
+      /* 窄机（iPhone SE 等）：隐藏代码、收紧间距，保证顶栏一行放下 */
+      #stock-info .scode { display: none; }
+      .period-tabs button { padding: 6px 5px; }
+      header { padding: 7px 8px; gap: 5px; }
+      #assistant-btn { padding: 0 7px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>A股分析系统</h1>
+    <button id="watch-toggle" title="自选列表">☰</button>
+    <div class="search-box">
+      <input id="search-input" placeholder="输入股票代码或名称，如 600036 / 招商银行" autocomplete="off">
+      <div id="search-results"></div>
+    </div>
+    <div id="stock-info"></div>
+    <div class="period-tabs">
+      <button data-period="day" class="active">日线</button>
+      <button data-period="week">周线</button>
+      <button data-period="month">月线</button>
+    </div>
+    <button id="assistant-btn" title="助手：选股 / 回测"><span class="ico">🧭</span><span class="lbl">助手</span></button>
+    <button id="theme-btn" title="切换主题">☀</button>
+  </header>
+  <div class="ind-bar">
+    <span class="ind-label">副图指标（可多选，最多 4 个）</span>
+    <div id="ind-chips"></div>
+    <button id="trade-btn" class="chip" title="在K线上标注交易账本（trade 表）的买卖点">买卖点</button>
+  </div>
+  <div class="workspace">
+    <aside id="watch">
+      <div class="watch-head">
+        <span class="watch-title">自选</span>
+        <span class="watch-tip">点 ＋ 加入当前股票</span>
+        <button id="watch-add" title="把当前股票加入自选">＋</button>
+      </div>
+      <div id="watch-list"></div>
+    </aside>
+    <main id="chart"></main>
+  </div>
+  <div id="watch-mask"></div>
+  <div class="empty-tip" id="empty-tip">
+    <div class="big">欢迎使用 A 股分析系统</div>
+    <div>在上方输入股票代码或名称，查看 K 线与技术指标</div>
+  </div>
+  <div id="minute-mask">
+    <div id="minute-box">
+      <div id="minute-head">
+        <span class="mt-title" id="minute-title"></span>
+        <span class="mt-nums" id="minute-nums"></span>
+        <button id="minute-close" title="关闭 (Esc)">×</button>
+      </div>
+      <div id="minute-chart"><div id="minute-tip"></div></div>
+    </div>
+  </div>
+  <div id="as-mask">
+    <div id="as-box">
+      <div id="as-head">
+        <span class="as-title">🧭 助手</span>
+        <span class="as-sub">选股与回测共用同一套规则</span>
+        <div class="as-tabs">
+          <button data-tab="select" class="active">选股</button>
+          <button data-tab="backtest">回测</button>
+          <button data-tab="paper">模拟盘</button>
+        </div>
+        <button id="as-close" title="关闭 (Esc)">×</button>
+      </div>
+
+      <!-- ========== 选股 ========== -->
+      <div class="as-pane active" data-pane="select">
+        <div class="as-form">
+          <div class="as-field"><label>策略</label><select id="as-s-strategy"></select></div>
+          <div class="as-field narrow"><label>选几只</label><input id="as-s-topn" type="number" value="5" min="1" max="30"></div>
+          <div class="as-field date"><label>日期（可空）</label><input id="as-s-date" placeholder="最新" maxlength="8"></div>
+          <div class="as-field narrow"><label>成交额≥万</label><input id="as-s-amt" type="number" value="5000"></div>
+          <div class="as-field narrow"><label>股价≥元</label><input id="as-s-price" type="number" value="2" step="0.5"></div>
+          <div class="as-field narrow"><label>涨幅＜%</label><input id="as-s-pct" type="number" value="9.5" step="0.5"></div>
+          <button class="as-btn" id="as-s-run">开始选股</button>
+        </div>
+        <div class="as-form as-form-sm">
+          <div class="as-field" style="flex:0 0 148px"><label>新策略名</label>
+            <input id="as-f-name" placeholder="我的策略" maxlength="24"></div>
+          <div class="as-field" style="flex:1 1 240px"><label>因子表达式</label>
+            <input id="as-f-expr" placeholder="z_SIZE + z_REV20 - z_VOL20" spellcheck="false"></div>
+          <button class="as-btn ghost" id="as-f-save">存为策略</button>
+          <button class="as-btn ghost" id="as-f-help">因子表</button>
+        </div>
+        <div class="as-factors" id="as-factors"></div>
+        <div class="as-status" id="as-s-status"></div>
+        <div class="as-actions" id="as-s-actions">
+          <span class="as-pickinfo" id="as-s-pickinfo"></span>
+          <button class="as-btn" id="as-s-tobt">用这批股回测 →</button>
+          <button class="as-btn ghost" id="as-s-topm">放进模拟盘 →</button>
+        </div>
+        <div class="as-scroll">
+          <div class="as-empty" id="as-s-empty">选一个策略，点「开始选股」<br>结果会同时存档到 signal 表</div>
+          <table class="as-table" id="as-s-table" style="display:none">
+            <thead><tr>
+              <th>#</th><th style="text-align:left">代码</th><th style="text-align:left">名称</th>
+              <th>得分</th><th>收盘</th><th>涨幅%</th><th>20日涨幅%</th>
+              <th>20日波动</th><th>市值亿</th><th>换手%</th><th>成交额亿</th><th></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ========== 回测 ========== -->
+      <div class="as-pane" data-pane="backtest">
+        <div class="as-form">
+          <div class="as-field"><label>策略</label><select id="as-b-strategy"></select></div>
+          <div class="as-field narrow"><label>选几只</label><input id="as-b-topn" type="number" value="5" min="1" max="30"></div>
+          <div class="as-field narrow"><label>持有天数</label><input id="as-b-hold" type="number" value="20" min="1" max="120"></div>
+          <div class="as-field narrow"><label>成本%</label><input id="as-b-cost" type="number" value="0.3" step="0.05"></div>
+          <div class="as-field date"><label>起始日</label><input id="as-b-start" value="20190101" maxlength="8"></div>
+          <div class="as-field narrow"><label>成交额≥万</label><input id="as-b-amt" type="number" value="5000"></div>
+          <div class="as-field narrow"><label>股价≥元</label><input id="as-b-price" type="number" value="2" step="0.5"></div>
+          <div class="as-field narrow"><label>涨幅＜%</label><input id="as-b-pct" type="number" value="9.5" step="0.5"></div>
+          <button class="as-btn" id="as-b-run">开始回测</button>
+        </div>
+        <div class="as-status" id="as-b-status"></div>
+        <div class="as-scroll">
+          <div class="as-empty" id="as-b-empty">选策略和参数，点「开始回测」<br>全样本一次约 40~60 秒，结果会存进 backtest_run 表</div>
+          <div id="as-b-result" style="display:none">
+            <div class="as-metrics" id="as-b-metrics"></div>
+            <div class="as-note" id="as-b-note"></div>
+            <div id="as-nav"></div>
+            <div class="as-year" id="as-b-year"></div>
+            <div class="as-actions" id="as-b-actions">
+              <span class="as-pickinfo" id="as-b-pickinfo"></span>
+              <button class="as-btn" id="as-b-topm">把这批股放进模拟盘 →</button>
+              <button class="as-btn ghost" id="as-b-back">← 回到选股</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 模拟盘 ========== -->
+      <div class="as-pane" data-pane="paper">
+        <div class="as-form">
+          <div class="as-field"><label>组合</label><select id="pm-list"></select></div>
+          <div class="as-field date"><label>买入日</label><input id="pm-date" placeholder="YYYYMMDD" maxlength="8"></div>
+          <div class="as-field narrow"><label>本金</label><input id="pm-cap" type="number" value="100000" step="10000"></div>
+          <div class="as-field narrow"><label>持有天</label><input id="pm-hold" type="number" value="20" min="1" max="120"></div>
+          <div class="as-field" style="flex:1 1 200px"><label>代码（逗号分隔）</label>
+            <input id="pm-codes" placeholder="300721,301516,603285"></div>
+          <button class="as-btn" id="pm-new">建模拟盘</button>
+          <button class="as-btn ghost" id="pm-del">删除</button>
+        </div>
+        <div class="as-status" id="pm-status"></div>
+        <div class="as-scroll">
+          <div class="as-empty" id="pm-empty">
+            还没有模拟盘<br>
+            填买入日 + 代码（或用选股结果里的代码），点「建模拟盘」<br>
+            净值按前复权收盘价逐日盯市，买入日之后第 N 个交易日为到期
+          </div>
+          <div id="pm-result" style="display:none">
+            <div class="as-metrics" id="pm-metrics"></div>
+            <div class="as-note" id="pm-note"></div>
+            <div id="pm-nav"></div>
+            <div class="as-year" id="pm-pos"></div>
+            <div class="as-year" id="pm-daily"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js?v=20261106d"></script>
+</body>
+</html>
